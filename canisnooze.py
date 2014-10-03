@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import sys
+import urllib
 import requests
 import datetime
 import re
@@ -12,9 +14,16 @@ def next_tuesday(day):
 
     return day + datetime.timedelta(days_ahead)
 
-def get_delay_info(day, train_name):
-    #train_name = "ICE"
-    req_str = "http://reiseauskunft.bahn.de/bin/bhftafel.exe/dn?&rt=1&input=Hamburg+Hbf&time=07:45&date=%s&productsFilter=1000000000&start=1&boardType=arr&REQTrain_name=1518" % (day)
+
+def strcmp(s1, s2):
+    return s1.strip().replace(' ', '') == s2.strip().replace(' ', '')
+
+
+def get_delay_info(day, arrivaltime, train_name):
+    trainarg = urllib.quote_plus(train_name) # To filter for the train in url parameter
+    filter = "1111111111" # allow ICE, IC and S-Bahn
+    req_str = "http://reiseauskunft.bahn.de/bin/bhftafel.exe/dn?&rt=1&input=Hamburg+Hbf&time=%(time)s&date=%(day)s&productsFilter=%(filter)s&start=1&boardType=arr&REQTrain_name=%(train)s" \
+        % {'day': day, 'time': arrivaltime, 'train': trainarg, 'filter': filter}
 
     print "Fetching Verbindungsinformationen..."
     req = requests.get(req_str)
@@ -23,7 +32,8 @@ def get_delay_info(day, train_name):
     rows = soup.find_all('tr', {'id':re.compile('journeyRow_.*')})
 
     for row in rows:
-        train = row.find_all('a', text=re.compile(".*ICE.*"))[0].text
+
+        train = row.findChildren('td', {'class':'train'})[1].text
         info = row.find_all('td', {'class':'ris'})
         delay = 0
 
@@ -31,7 +41,7 @@ def get_delay_info(day, train_name):
             print "Too far in the future; no info available yet."
             delay = -1
 
-        elif (train_name in train):
+        elif (strcmp(train_name,train)):
             delay_info = info[0].find_all('span', text=re.compile(".*ca\. \+*"))
 
             # if there is info about a delay, there is a delay (duh)
@@ -48,14 +58,22 @@ def get_delay_info(day, train_name):
 
         else:
             # TODO handle this like a grown-up.
-            print "something went terribly wrong. :("
+            raise Exception("something went terribly wrong. :(")
 
         return {"train", train_name, "delay", delay}
 
 if __name__ == "__main__":
-    today = datetime.date.today()
-    train_name = "ICE 1518"
-    next_tuesday = next_tuesday(today).strftime("%d.%m.%y")
-    print("Getting delay info for %s on tuesday, %s ..." % (train_name, next_tuesday))
-    print get_delay_info(next_tuesday, train_name)
+
+    if len(sys.argv) == 2:
+        train_name = sys.argv[1]
+        time = datetime.date.today().strftime("%H:%M")
+        day = datetime.date.today().strftime("%d.%m.%y")
+    else:
+        today = datetime.date.today()
+        train_name = "ICE 1518"
+        time = "07:45"
+        day = next_tuesday(today).strftime("%d.%m.%y")
+
+    print("Getting delay info for %s on %s ..." % (train_name, day))
+    print get_delay_info(day, time, train_name)
 
